@@ -88,3 +88,5 @@ __MACOSX/
 # Datasets
 native_labelled/
 plot_annotations_commercial/
+# Editor-local settings
+.vscode/
