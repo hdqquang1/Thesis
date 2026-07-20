@@ -25,12 +25,12 @@ Protocol message:
 
 # -----Imports------------------------------------------------------------------
 from dataclasses import dataclass
-from struct import pack, unpack, unpack_from, calcsize
+import struct
 import numpy as np
 
 
 # -----Constants----------------------------------------------------------------
-MSG_PREFIX = 0x39594040 # NYOO
+MSG_PREFIX = 0x39594040  # NYOO
 
 MSG_HELLO = 0x01
 MSG_READY = 0x02
@@ -55,17 +55,18 @@ CLASS_ID = {
 # -----Helper functions---------------------------------------------------------
 def frame(msg_type: int, payload: bytes) -> bytes:
     """Put payload into a full message frame"""
-    header = pack(MSG_HEADER_FORMAT, MSG_PREFIX, msg_type, 
-                    len(payload))
+    header = struct.pack(MSG_HEADER_FORMAT, MSG_PREFIX, msg_type,
+                         len(payload))
     return header + payload
+
 
 def parse_header(header: bytes) -> tuple[int, int]:
     """Parse an incoming message to extract message type and payload length"""
-    prefix, msg_type, payload_len = unpack(MSG_HEADER_FORMAT, 
-                                            header)
+    prefix, msg_type, payload_len = struct.unpack(MSG_HEADER_FORMAT,
+                                                  header)
     if prefix != MSG_PREFIX:
         raise ValueError(f"bad magic: {prefix:#x}")
-    return (msg_type, payload_len)
+    return msg_type, payload_len
 
 
 # -----Classes------------------------------------------------------------------
@@ -77,14 +78,16 @@ class Hello:
     def is_valid(self):
         if self.count < 0:
             raise ValueError(f"invalid point count: {self.count}")
-        
+
+
 @dataclass
 class Ready:
-    ok: bool
+    ok: int  # int to avoid other garbage values treated as true
 
     def is_valid(self):
-        if self.ok not in (0,1):
+        if self.ok not in (0, 1):
             raise ValueError(f"invalid ok flag: {self.ok}")
+
 
 @dataclass
 class Click:
@@ -100,6 +103,7 @@ class Click:
             raise ValueError(f"invalid class_id: {self.class_id}")
         if self.positive_flag not in (0, 1):
             raise ValueError(f"invalid positive_flag: {self.positive_flag}")
+
 
 @dataclass
 class Labels:
@@ -118,67 +122,77 @@ class Labels:
 def encode_hello(hello: Hello) -> bytes:
     """Encode on UE5"""
     hello.is_valid()
-    payload = pack(MSG_HELLO_FORMAT, hello.count, hello.checksum)
+    payload = struct.pack(MSG_HELLO_FORMAT, hello.count, hello.checksum)
     return frame(MSG_HELLO, payload)
+
 
 def decode_hello(payload: bytes) -> Hello:
     """Decode on Python module"""
-    hello = Hello(*unpack(MSG_HELLO_FORMAT, payload))
+    hello = Hello(*struct.unpack(MSG_HELLO_FORMAT, payload))
     hello.is_valid()
     return hello
+
 
 def encode_ready(ready: Ready) -> bytes:
     """Encode on Python module"""
     ready.is_valid()
-    payload = pack(MSG_READY_FORMAT, ready.ok)
+    payload = struct.pack(MSG_READY_FORMAT, ready.ok)
     return frame(MSG_READY, payload)
+
 
 def decode_ready(payload: bytes) -> Ready:
     """Decode on UE5"""
-    ready = Ready(unpack(MSG_READY_FORMAT, payload)[0])
+    ready = Ready(struct.unpack(MSG_READY_FORMAT, payload)[0])
     ready.is_valid()
     return ready
+
 
 def encode_click(click: Click) -> bytes:
     """Encode on UE5"""
     click.is_valid()
-    payload = pack(MSG_CLICK_FORMAT, click.point_index, click.x, click.y,
-                click.z, click.class_id, click.positive_flag)
+    payload = struct.pack(MSG_CLICK_FORMAT, click.point_index, click.x, click.y,
+                          click.z, click.class_id, click.positive_flag)
     return frame(MSG_CLICK, payload)
+
 
 def decode_click(payload: bytes) -> Click:
     """Decode on Python module"""
-    click = Click(*unpack(MSG_CLICK_FORMAT, payload))
+    click = Click(*struct.unpack(MSG_CLICK_FORMAT, payload))
     click.is_valid()
     return click
+
 
 def encode_labels(labels: Labels) -> bytes:
     """Encode on Python module"""
     labels.is_valid()
     count = len(labels.point_indices)
-    flat = [v for pair in zip(labels.point_indices, labels.class_ids) for v in pair]
-    payload = pack("<I"+"IB"*count, count, *flat)
+    flat = [v for pair in zip(labels.point_indices,
+                              labels.class_ids) for v in pair]
+    payload = struct.pack("<I"+"IB"*count, count, *flat)
     return frame(MSG_LABELS, payload)
+
 
 def decode_labels(payload: bytes) -> Labels:
     """Decode on UE5"""
-    count = unpack_from("<I", payload)[0]
-    rest = unpack_from("<" + "IB"*count, payload, offset=4)
+    count = struct.unpack_from("<I", payload)[0]
+    rest = struct.unpack_from("<" + "IB"*count, payload, offset=4)
     point_indices = list(rest[0::2])
     class_ids = list(rest[1::2])
     labels = Labels(point_indices, class_ids)
     labels.is_valid()
     return labels
 
+
 def encode_full_labels(class_ids: np.ndarray) -> bytes:
     """Encode on Python module"""
     arr = np.asarray(class_ids, dtype=np.uint8)
     if not np.isin(arr, list(CLASS_ID.values())).all():
         raise ValueError("invalid class_id in full labels")
-    payload = pack("<I", len(arr)) + arr.tobytes()
+    payload = struct.pack("<I", len(arr)) + arr.tobytes()
     return frame(MSG_FULL_LABELS, payload)
+
 
 def decode_full_labels(payload: bytes) -> np.ndarray:
     """Decode on UE5"""
-    count = unpack_from("<I", payload)[0]
+    count = struct.unpack_from("<I", payload)[0]
     return np.frombuffer(payload, dtype=np.uint8, count=count, offset=4).copy()
