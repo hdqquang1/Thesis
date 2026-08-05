@@ -1,32 +1,5 @@
-""" State machine of Python module.
-
-Sequence on the Python module side
-
-[INIT] ──load cloud, start listening──► [WAITING_FOR_CLIENT]
-      │
-      └──accept()──► [HANDSHAKE]
-                         │
-              recv HELLO, check count+checksum
-                         │
-              ┌──────────┴───────────┐
-           match                 mismatch
-              │                      │
-         send READY(1)         send READY(0)
-              │                      │
-              ▼                      ▼
-      [READY / SERVING]          [ABORT] ──► close
-              │
-   ┌──────────┴────────────────────────────┐
-   │  loop:                                │
-   │    recv_message                       │
-   │    ├─ CLICK → run inference,          │
-   │    │         send LABELS back         │
-   │    ├─ (initial) → send FULL_LABELS    │
-   │    └─ ConnectionError → break         │
-   └───────────────────────────────────────┘
-              │
-              ▼
-          [CLOSED]
+"""Test integration of Python module using KNN as interactive segmentation
+method
 """
 
 
@@ -41,8 +14,7 @@ import open3d as o3d
 
 from server import Listener
 from protocol import (
-    MSG_HELLO,
-    MSG_CLICK,
+    MsgType,
     Ready,
     Labels,
     decode_hello,
@@ -57,6 +29,7 @@ from protocol import (
 HOST = "127.0.0.1"
 PORT = 9000
 
+
 # -----Logging-------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
@@ -64,19 +37,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# -----Functions----------------------------------------------------------------
-
 
 # -----Main---------------------------------------------------------------------
-def main():
+if __name__ == "__main__":
     # Load point cloud
     parser = argparse.ArgumentParser(
         description="Interactive segmentation Python module.")
-    parser.add_argument("las_path", help="Path to point cloud LAZ file.")
+    parser.add_argument("laz_path", help="Path to point cloud LAZ file.")
     args = parser.parse_args()
 
-    logger.info("Loading point cloud from %s", args.las_path)
-    las = laspy.read(args.las_path)
+    logger.info("Loading point cloud from %s", args.laz_path)
+    las = laspy.read(args.laz_path)
     points = np.vstack((las.x, las.y, las.z)).transpose().astype(np.float32)
     labels = las.classification
 
@@ -97,9 +68,9 @@ def main():
         msg_type, payload = conn.recv_message()
         logger.info("Received HELLO")
 
-        if msg_type != MSG_HELLO:
+        if msg_type != MsgType.HELLO:
             raise ValueError(
-                f"invalid first message type: {msg_type} != {MSG_HELLO}")
+                f"invalid first message type: {msg_type} != {MsgType.HELLO}")
 
         hello = decode_hello(payload)
         logger.info(
@@ -139,21 +110,22 @@ def main():
             while True:
                 msg_type, payload = conn.recv_message()
 
-                if msg_type == MSG_CLICK:
+                if msg_type == MsgType.CLICK:
                     click = decode_click(payload)
                     logger.info(
                         "Received CLICK: point_index=%d class_id=%d",
                         click.point_index, click.class_id,
                     )
-                    
+
                     # TODO: point_indices = interseg_infer(click)
                     # conn.send_message(encode_labels(Labels(point_indices, class_ids)))
                     # class_ids depends on ISSR choose points based on selected class or fix all neighbour points regardless of class
                     [k, idx, _] = pcd_tree.search_knn_vector_3d(
-                        pcd.points[click.point_index], 2000)
+                        pcd.points[click.point_index], 10000)
                     class_ids = np.full(k, click.class_id, dtype=np.uint8)
                     point_indices = list(idx)
-                    conn.send_message(encode_labels(Labels(point_indices, class_ids)))
+                    conn.send_message(encode_labels(
+                        Labels(point_indices, class_ids)))
                     logger.info("Sent LABELS for %d neighbour points", k)
 
                 else:
@@ -163,7 +135,3 @@ def main():
 
     listener.close()
     logger.info("Listener closed")
-
-
-if __name__ == "__main__":
-    main()

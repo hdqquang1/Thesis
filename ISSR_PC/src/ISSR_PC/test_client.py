@@ -1,3 +1,8 @@
+"""Test client using Open3D to visualize point cloud
+"""
+
+
+# -----Imports------------------------------------------------------------------
 import argparse
 import laspy
 import logging
@@ -9,9 +14,8 @@ from server import Connection
 import open3d as o3d
 
 from protocol import (
-    MSG_READY,
-    MSG_LABELS,
-    MSG_FULL_LABELS,
+    MsgType,
+    CLASS_ID,
     Hello,
     Click,
     encode_hello,
@@ -22,14 +26,17 @@ from protocol import (
 )
 
 
+# -----Constants----------------------------------------------------------------
 COLOR_MAP = {
     0: (0, 255, 0),      # Green  - Foliage
     1: (255, 0, 0),      # Red    - Stem
     2: (0, 0, 255),      # Blue   - Ground
     3: (0, 255, 255),    # Cyan   - Undergrowth
-    255: (160, 160, 160)  # Gray   - Unlabelled
+    31: (160, 160, 160)  # Gray   - Unlabelled
 }
 
+
+# -----Logging-------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -37,15 +44,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# -----Main---------------------------------------------------------------------
 if __name__ == "__main__":
     # Load point cloud
     parser = argparse.ArgumentParser(
         description="Interactive segmentation Python module.")
-    parser.add_argument("las_path", help="Path to point cloud LAZ file.")
+    parser.add_argument("laz_path", help="Path to point cloud LAZ file.")
     args = parser.parse_args()
 
-    logger.info("Loading point cloud from %s", args.las_path)
-    las = laspy.read(args.las_path)
+    logger.info("Loading point cloud from %s", args.laz_path)
+    las = laspy.read(args.laz_path)
     points = np.vstack((las.x, las.y, las.z)).transpose().astype(np.float32)
     # labels = las.classification
 
@@ -66,8 +74,8 @@ if __name__ == "__main__":
 
     # Receive ready message
     msg_type, payload = conn.recv_message()
-    if msg_type != MSG_READY:
-        raise ValueError(f"invalid message type: {msg_type} != {MSG_READY}")
+    if msg_type != MsgType.READY:
+        raise ValueError(f"invalid message type: {msg_type} != {MsgType.READY}")
     ready = decode_ready(payload)
     if ready.ok == 0:
         logger.warning("Python module not ready; aborting")
@@ -76,9 +84,9 @@ if __name__ == "__main__":
 
     # Receive initial full inference
     msg_type, payload = conn.recv_message()
-    if msg_type != MSG_FULL_LABELS:
+    if msg_type != MsgType.FULL_LABELS:
         raise ValueError(
-            f"invalid message type: {msg_type} != {MSG_FULL_LABELS}")
+            f"invalid message type: {msg_type} != {MsgType.FULL_LABELS}")
     full_labels = decode_full_labels(payload)
     logger.info("Received initial FULL_LABELS (%d labels)", len(full_labels))
 
@@ -110,11 +118,11 @@ if __name__ == "__main__":
             logger.info("Picked %d point(s)", len(picked))
             for p in picked:
                 click_msg = encode_click(
-                    Click(int(p), 0.0, 0.0, 0.0, 255, 1))
+                    Click(int(p), 0.0, 0.0, 0.0, CLASS_ID['UNLABELLED'], 1))
                 conn.send_message(click_msg)
                 logger.info("Sent CLICK: point_index=%d", int(p))
                 msg_type, payload = conn.recv_message()
-                if msg_type == MSG_LABELS:
+                if msg_type == MsgType.LABELS:
                     labels = decode_labels(payload)
                     logger.info(
                         "Received LABELS for %d point(s)",

@@ -39,14 +39,14 @@ class TestFrame:
     def test_frame_prepends_header_to_payload(self):
         payload = b'\x01\x02\x03\x04'
 
-        message = protocol.frame(protocol.MSG_CLICK, payload)
+        message = protocol.frame(protocol.MsgType.CLICK, payload)
 
         assert message[EXPECTED_HEADER_SIZE:] == payload
 
     def test_frame_total_length_is_header_plus_payload(self):
         payload = b'\x01\x02\x03\x04'
 
-        message = protocol.frame(protocol.MSG_CLICK, payload)
+        message = protocol.frame(protocol.MsgType.CLICK, payload)
 
         assert len(message) == EXPECTED_HEADER_SIZE + len(payload)
 
@@ -54,13 +54,13 @@ class TestFrame:
         """payload_len is a byte count — a classic off-by-encoding bug."""
         payload = b'\x00' * 18
 
-        message = protocol.frame(protocol.MSG_CLICK, payload)
+        message = protocol.frame(protocol.MsgType.CLICK, payload)
         _, payload_len = protocol.parse_header(message[:EXPECTED_HEADER_SIZE])
 
         assert payload_len == 18
 
     def test_frame_handles_empty_payload(self):
-        message = protocol.frame(protocol.MSG_READY, b'')
+        message = protocol.frame(protocol.MsgType.READY, b'')
 
         assert len(message) == EXPECTED_HEADER_SIZE
 
@@ -69,15 +69,15 @@ class TestParseHeader:
     """Tests for header parsing and magic-number validation."""
 
     def test_parse_header_returns_message_type_and_payload_length(self):
-        message = protocol.frame(protocol.MSG_CLICK, b'\x00' * 18)
+        message = protocol.frame(protocol.MsgType.CLICK, b'\x00' * 18)
 
         msg_type, payload_len = protocol.parse_header(message[:EXPECTED_HEADER_SIZE])
 
-        assert (msg_type, payload_len) == (protocol.MSG_CLICK, 18)
+        assert (msg_type, payload_len) == (protocol.MsgType.CLICK, 18)
 
     def test_parse_header_raises_on_bad_magic(self):
         corrupt_header = struct.pack(protocol.MSG_HEADER_FORMAT,
-                                     0xDEADBEEF, protocol.MSG_CLICK, 18)
+                                     0xDEADBEEF, protocol.MsgType.CLICK, 18)
 
         with pytest.raises(ValueError, match='bad magic'):
             protocol.parse_header(corrupt_header)
@@ -106,7 +106,7 @@ class TestHelloRoundTrip:
         message = protocol.encode_hello(hello)
         msg_type, _ = protocol.parse_header(message[:EXPECTED_HEADER_SIZE])
 
-        assert msg_type == protocol.MSG_HELLO
+        assert msg_type == protocol.MsgType.HELLO
 
     def test_encode_hello_produces_correct_payload_size(self):
         hello = protocol.Hello(50000, 0xCAFEBABE)
@@ -163,7 +163,7 @@ class TestReadyRoundTrip:
         message = protocol.encode_ready(ready)
         msg_type, _ = protocol.parse_header(message[:EXPECTED_HEADER_SIZE])
 
-        assert msg_type == protocol.MSG_READY
+        assert msg_type == protocol.MsgType.READY
 
     def test_encode_ready_produces_correct_payload_size(self):
         ready = protocol.Ready(0)
@@ -238,7 +238,7 @@ class TestClickRoundTrip:
         message = protocol.encode_click(click)
         msg_type, _ = protocol.parse_header(message[:EXPECTED_HEADER_SIZE])
 
-        assert msg_type == protocol.MSG_CLICK
+        assert msg_type == protocol.MsgType.CLICK
 
 
 class TestClickBoundaryValues:
@@ -302,7 +302,7 @@ class TestLabelsRoundTrip:
         message = protocol.encode_labels(labels)
         msg_type, _ = protocol.parse_header(message[:EXPECTED_HEADER_SIZE])
 
-        assert msg_type == protocol.MSG_LABELS
+        assert msg_type == protocol.MsgType.LABELS
 
     def test_encode_labels_records_correct_payload_length(self):
         labels = protocol.Labels([1, 2, 3], [0, 1, 2])
@@ -385,7 +385,7 @@ class TestFullLabelsRoundTrip:
         message = protocol.encode_full_labels(labels)
         msg_type, _ = protocol.parse_header(message[:EXPECTED_HEADER_SIZE])
 
-        assert msg_type == protocol.MSG_FULL_LABELS
+        assert msg_type == protocol.MsgType.FULL_LABELS
 
     def test_encode_full_labels_records_correct_payload_length(self):
         labels = np.array([1, 2, 3, 0], dtype=np.uint8)

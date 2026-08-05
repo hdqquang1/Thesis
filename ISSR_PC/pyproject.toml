@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ISSR_PC"
+version = "0.1.0"
+description = "ML side of the VR interactive forest segmentation system (server, protocol, model, refinement, eval)"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "laspy",
+    "open3d",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
