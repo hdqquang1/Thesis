@@ -1,14 +1,17 @@
 """Flatten point cloud surface by normalizing Z coordinates per grid cell."""
 
+
+# -----Imports------------------------------------------------------------------
 import sys
 import os
 import pickle
 import numpy as np
+import argparse
 
 
+# -----Functions----------------------------------------------------------------
 def flatten_surface(pickle_path, grid_resolution=1):
-    """
-    Flatten surface by normalizing Z per grid cell.
+    """Flatten surface by normalizing Z per grid cell.
     
     The lowest point in each (x,y) grid cell becomes ground level (z=0),
     and all other points in that cell are offset by the same amount.
@@ -64,11 +67,19 @@ def flatten_surface(pickle_path, grid_resolution=1):
     print(f"Grid resolution: {grid_resolution}m")
 
 
+# -----Main---------------------------------------------------------------------
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python flatten.py <file.p> [grid_resolution]")
-        sys.exit(1)
-    
-    pickle_path = sys.argv[1]
-    grid_res = float(sys.argv[2]) if len(sys.argv) > 2 else 1
-    flatten_surface(pickle_path, grid_res)
+    parser = argparse.ArgumentParser(
+            description="Downsample a LAZ point cloud, retaining exact classification"
+        )
+    parser.add_argument(
+        "input_file", help="Path to input LAZ file"
+    )
+
+    parser.add_argument(
+        "--grid_res", help="Resolution of grid cell (default: 1)",
+        default=1
+    )
+    args = parser.parse_args()
+
+    flatten_surface(args.input_file, args.grid_res)
