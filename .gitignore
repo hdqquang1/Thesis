@@ -73,9 +73,9 @@ Intermediate/
 # Cache files for the editor to use
 DerivedDataCache/
 
-# Imported point cloud assets are too large for GitHub (>100MB).
-# Re-import the raw clouds in UE5 to regenerate these.
-MyProject/Content/PointClouds/*.uasset
+# Imported point cloud assets: too large for git, store separately
+# (external drive / cloud storage). Re-import raw clouds in UE5 to regenerate.
+ISSR_VR/Content/PointClouds/*.uasset
 
 # Python
 __pycache__/
