@@ -1,0 +1,9 @@
+[submodule "Pointnet_Pointnet2_pytorch"]
+	path = Pointnet_Pointnet2_pytorch
+	url = https://github.com/hdqquang1/Pointnet_Pointnet2_pytorch.git
+[submodule "ISSR"]
+	path = ISSR
+	url = https://github.com/hdqquang1/ISSR.git
+[submodule "Pointcept"]
+	path = Pointcept
+	url = https://github.com/hdqquang1/Pointcept.git
