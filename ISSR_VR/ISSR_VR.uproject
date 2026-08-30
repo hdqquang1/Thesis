@@ -51,6 +51,10 @@
 				"Mac",
 				"Linux"
 			]
+		},
+		{
+			"Name": "PythonFoundationPackages",
+			"Enabled": true
 		}
 	],
 	"TargetPlatforms": [

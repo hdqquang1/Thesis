@@ -5,9 +5,11 @@ classification
 
 # -----Imports------------------------------------------------------------------
 import numpy as np
-import sys
 import argparse
-import laspy
+from convert_to_laz import (
+    read_laz,
+    write_laz
+)
 
 
 # -----Functions----------------------------------------------------------------
@@ -27,21 +29,20 @@ def get_density(points: np.ndarray) -> float:
 
 
 # -----Main---------------------------------------------------------------------
-if __name__ == "__main__":
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Downsample a LAZ point cloud, retaining exact classification"
     )
     parser.add_argument(
-        "input_file", help="Path to input LAZ file"
+        "input_path", help="Path to input LAZ file"
     )
+    args = parser.parse_args()
 
-    input_path = sys.argv[1]
+    input_path = args.input_path
     output_path = input_path.replace(".laz", "_downsampled.laz")
     voxel_size = 0.2
 
-    las_in = laspy.read(input_path)
-    points = np.vstack((las_in.x, las_in.y, las_in.z)).transpose()
-    classification = np.asarray(las_in.classification)
+    points, classification, red, green, blue = read_laz(input_path)
 
     # Pick one real point per voxel (no averaging), so position and
     # classification always stay correctly paired.
@@ -49,19 +50,17 @@ if __name__ == "__main__":
     _, representative_indices = np.unique(
         voxel_indices, axis=0, return_index=True)
 
-    out_points = points[representative_indices]
-    out_classification = classification[representative_indices]
+    output_points = points[representative_indices]
+    output_classification = classification[representative_indices]
 
     print(
         f"Input has size {len(points)}, density {get_density(points)} pts/m3")
     print(
-        f"Output has size {len(out_points)}, density {get_density(out_points)} pts/m3")
+        f"Output has size {len(output_points)}, density {get_density(output_points)} pts/m3")
 
-    header = laspy.LasHeader(point_format=6)
-    las_out = laspy.LasData(header)
-    las_out.x = out_points[:, 0]
-    las_out.y = out_points[:, 1]
-    las_out.z = out_points[:, 2]
-    las_out.classification = out_classification
-    las_out.write(output_path)
-    print(f"Wrote {len(out_points)} points to {output_path}")
+    write_laz(output_points, output_classification, output_path)
+    print(f"Wrote {len(output_points)} points to {output_path}")
+
+
+if __name__ == "__main__":
+    main()

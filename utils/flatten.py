@@ -10,7 +10,7 @@ import argparse
 
 
 # -----Functions----------------------------------------------------------------
-def flatten_surface(pickle_path, grid_resolution=1):
+def flatten_surface(pickle_path: str, grid_resolution: float = 1) -> None:
     """Flatten surface by normalizing Z per grid cell.
     
     The lowest point in each (x,y) grid cell becomes ground level (z=0),
@@ -68,7 +68,7 @@ def flatten_surface(pickle_path, grid_resolution=1):
 
 
 # -----Main---------------------------------------------------------------------
-if __name__ == "__main__":
+def main() -> None:
     parser = argparse.ArgumentParser(
             description="Downsample a LAZ point cloud, retaining exact classification"
         )
@@ -77,9 +77,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--grid_res", help="Resolution of grid cell (default: 1)",
-        default=1
+        "--grid_resolution", help="Resolution of grid cell (default: 1)",
+        default=1, type=float
     )
     args = parser.parse_args()
 
-    flatten_surface(args.input_file, args.grid_res)
+    flatten_surface(args.input_file, args.grid_resolution)
+
+
+if __name__ == "__main__":
+    main()
