@@ -1,6 +1,6 @@
 # Thesis Plan — VR Interactive Segmentation of Forest LiDAR
 
-_Last updated: 2026-07-04_
+_Last updated: 2026-08-30_
 
 This plan is grounded in the Preliminary Report and the seminar slides, revised after Thesis A learnings. The thesis builds a Meta Quest 3S VR tool (via **Quest Link**, PC-tethered) that (a) renders ~10M-point forest LiDAR clouds at interactive frame rates, (b) lets the user place click / box / brush prompts on individual points, and (c) closes the loop with a deep-learning interactive semantic segmentation backbone using **InterPCSeg-style test-time refinement** as the primary method. Four classes: **stem, foliage, ground, undergrowth**. Data: Hovermap TLS scans across five commercial pine plots (DogPark, HQP2020, OFO2021; Chinthammit et al.), all pre-labelled.
 
@@ -21,24 +21,27 @@ Key decisions locked since the May version: **PTv3** is the primary backbone (Ra
 
 ### 1.2 Done already
 - Quest 3S acquired (Thesis Funding Scheme).
-- UE5 + Oculus / OpenXR / hand-tracking / eye-tracking / LidarPointCloud plugins enabled in `MyProject`.
-- Initial VR visualiser: monolithic `.uasset` cloud + VR pawn + ground collider + nav volume, auto-built by `build_flat_vr_scene.py`.
-- A label-via-RGB probe (`probe_label.py`) that ray-casts and prints the class at the hit point.
-- Five labelled clouds prepared, with flattened variants for terrain normalisation.
-- `utils/` scripts for routine point-cloud chores used in report figures: pickle→PLY/TXT with label-RGB mapping (`convert_p.py`), per-cell ground-zero flattening (`flatten.py`), label stripping (`unlabel.py`), shape probe (`check_size.py`).
-- Preliminary Report draft written, seminar delivered. Thesis A complete; point cloud renderer partially complete at Week 12.
-- Open3D 0.19 built from source on Windows with CUDA 12.6 + PyTorch ops (see `BUILD_WINDOWS_PYTORCH_OPS.md`) — the ML pipeline environment exists.
-- Initial commit made (repo hygiene partially done).
+- UE5 + Oculus / OpenXR / hand-tracking / eye-tracking / LidarPointCloud plugins enabled in the `ISSR_VR` project.
+- Preliminary Report draft written, seminar delivered. Thesis A complete.
+- Open3D 0.19 built from source on Windows with CUDA 12.6 + PyTorch ops — the ML pipeline environment exists (`environment.yml`).
+- **Wire protocol implemented on both sides, kept in sync deliberately**: `ISSR_PC/src/ISSR_PC/protocol.py` (HELLO / READY / CLICK / LABELS / FULL_LABELS, struct-packed) mirrored by `ISSR_VR/Source/ISSR_VR/{Public,Private}/SegProtocol.{h,cpp}`, with `static_assert`s pinning the C++ struct sizes to the Python `struct` formats. Covered by 461 lines of tests (`ISSR_PC/tests/test_protocol.py`).
+- **Python TCP server** (`server.py`: `Listener`/`Connection`, blocking single-client, length-prefixed framing) and **UE5 TCP client** (`SegClientComponent`: non-blocking socket, explicit `Disconnected → Connected → Ready → Loop` handshake state machine).
+- **Point store on the UE5 side** (`SegPointStoreComponent`): builds index-stable canonical position/label arrays from a `LidarPointCloud` asset, exports them to a canonical `.bin` (positions + ground-truth labels + checksum) that the Python side loads for the handshake, supports ray-pick and exact-position lookup (sorted array + binary search — see note below), and writes label updates back onto the plugin's per-point `ClassificationID` for display. This is the real version of the "decouple labels from RGB" idea in §2.1.
+- **Click tool implemented**: `SegInteractionComponent` binds a UE5 Enhanced Input action (`IA_SegClick` / `IMC_Segmentation`, committed under `ISSR_VR/Content/ISSR/`) to a motion-controller aim ray, picks a point via the point store, and sends it as a `CLICK` through `SegClientComponent`.
+- **`app.py` is a working, if geometric-only, end-to-end server**: loads the canonical `.bin`, builds an Open3D KD-tree, runs the HELLO/READY handshake with checksum validation, sends the ground-truth labels as the initial `FULL_LABELS` (`seg_infer` is still a `TODO`), then on each `CLICK` does a 5000-nearest-neighbour flood-fill of the clicked class and replies with `LABELS`. Functionally this **is** the plan's `GeometricBackend` (§2.3, item 1), just written inline rather than behind an interface (see gaps below).
+- **Segmentation metrics implemented**: `metrics.py` — confusion matrix, per-class IoU, mIoU, overall accuracy — with tests (`tests/test_metrics.py`). This is the scoring half of the Week 4 eval harness; the click-simulator half (`eval.py`) is still a stub.
+- Test coverage beyond protocol/metrics: `test_app.py`, `test_client.py` (137 lines each).
+- Forked backbone repos vendored as git submodules for training/comparison: `Pointcept` (PTv3/PTv1 training), `Pointnet_Pointnet2_pytorch` (baseline), and an `ISSR` mirror.
+- `utils/` scripts carried forward and reformatted: `convert_to_laz.py`, `downsample.py`, `flatten.py`, `plot.py`.
 
 ### 1.3 Open gaps that this plan addresses
-- The visualiser still loads the full cloud as a single asset; no perf telemetry.
-- **Plugin selection insufficiency known.** The plugin's internal octree is private and cannot be queried, so label storage and spatial querying are permanently our responsibility — hence the parallel voxel hash grid. The plugin remains the renderer; the hash grid serves interactive queries.
-- Labels are encoded as RGB. This works for a read-only viewer; it falls apart the moment a user starts editing labels in VR.
-- No annotation tooling at all — click, box, brush.
-- No prompt-event abstraction, so the click / box / brush code that gets written today will not feed cleanly into the refinement loop later.
-- No segmentation-backend interface or stub. The plumbing needs to be there from the first annotation tool, or the backbone integration becomes a rewrite.
-- Backbone benchmarking not started (planned across the semester break).
-- README still missing.
+- **`model.py`, `refine.py`, `eval.py` are still empty stubs** (one-line docstrings only). The backbone (PTv3 via Pointcept), InterPCSeg-style refinement, and the automated click-simulator/NoC@q harness have not been started — this is Week 2–4 work in §3, not yet begun despite the submodules landing.
+- **No `ISegmentationBackend` abstraction.** `app.py` hardcodes the KNN flood-fill directly in the message loop instead of behind the pluggable interface in §2.3. Swapping in a real model currently means editing `app.py`, not swapping a backend — worth doing before Week 2 lands to avoid the rewrite §2.3 was meant to prevent.
+- **No `FPromptEvent` stream.** `FClick`/`Click` is a single-shot request/response, not the append-only, replayable prompt log described in §2.2/2.4. There is no `prompts.jsonl`, no undo, and box/brush tools have no event shape to emit into yet.
+- **Point store uses a sorted array + binary search, not a voxel hash grid.** `SegPointStoreComponent::FindIndexByPosition` does exact-position lookup via `IndicesByPosition`; there's no spatial hash for radius/box/neighbourhood queries yet, so box and brush tools (and any region-around-prompt extraction for inference) have nothing to query against. §2.1/§2.6's hash-grid design is still aspirational, not built.
+- Box and brush tools do not exist; only click does.
+- No perf telemetry (FPS, dropped frames) has been captured through Quest Link yet.
+- README still missing at the repo root.
 
 ---
 
