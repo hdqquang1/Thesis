@@ -86,8 +86,8 @@ __MACOSX/
 .DS_Store
 
 # Datasets
-native_labelled/
-plot_annotations_commercial/
+data/
+scannet_3d/
 
 # Editor-local settings
 .vscode/
