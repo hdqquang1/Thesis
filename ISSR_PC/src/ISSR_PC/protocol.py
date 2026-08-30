@@ -37,7 +37,7 @@ CLASS_ID = {
 
 
 # -----Helper functions---------------------------------------------------------
-def frame(msg_type: MsgType, payload: bytes) -> bytes:
+def frame(msg_type, payload):
     """Puts payload into a full message frame.
 
     Args:
@@ -52,7 +52,7 @@ def frame(msg_type: MsgType, payload: bytes) -> bytes:
     return header + payload
 
 
-def parse_header(header: bytes) -> tuple[MsgType, int]:
+def parse_header(header):
     """Parse an incoming message to extract message type and payload length
 
     Args:
@@ -174,7 +174,7 @@ class Labels:
 
 
 # -----Functions----------------------------------------------------------------
-def encode_hello(hello: Hello) -> bytes:
+def encode_hello(hello):
     """Encodes a HELLO message. Called on UE5.
 
     Args:
@@ -191,7 +191,7 @@ def encode_hello(hello: Hello) -> bytes:
     return frame(MsgType.HELLO, payload)
 
 
-def decode_hello(payload: bytes) -> Hello:
+def decode_hello(payload):
     """Decodes a HELLO message payload. Called on the Python module.
 
     Args:
@@ -209,7 +209,7 @@ def decode_hello(payload: bytes) -> Hello:
     return hello
 
 
-def encode_ready(ready: Ready) -> bytes:
+def encode_ready(ready):
     """Encodes a READY message. Called on the Python module.
 
     Args:
@@ -226,7 +226,7 @@ def encode_ready(ready: Ready) -> bytes:
     return frame(MsgType.READY, payload)
 
 
-def decode_ready(payload: bytes) -> Ready:
+def decode_ready(payload):
     """Decodes a READY message payload. Called on UE5.
 
     Args:
@@ -244,7 +244,7 @@ def decode_ready(payload: bytes) -> Ready:
     return ready
 
 
-def encode_click(click: Click) -> bytes:
+def encode_click(click):
     """Encodes a CLICK message. Called on UE5.
 
     Args:
@@ -262,7 +262,7 @@ def encode_click(click: Click) -> bytes:
     return frame(MsgType.CLICK, payload)
 
 
-def decode_click(payload: bytes) -> Click:
+def decode_click(payload):
     """Decodes a CLICK message payload. Called on the Python module.
 
     Args:
@@ -280,7 +280,7 @@ def decode_click(payload: bytes) -> Click:
     return click
 
 
-def encode_labels(labels: Labels) -> bytes:
+def encode_labels(labels):
     """Encodes a LABELS message. Called on the Python module.
 
     Args:
@@ -300,7 +300,7 @@ def encode_labels(labels: Labels) -> bytes:
     return frame(MsgType.LABELS, payload)
 
 
-def decode_labels(payload: bytes) -> Labels:
+def decode_labels(payload):
     """Decodes a LABELS message payload. Called on UE5.
 
     Args:
@@ -322,7 +322,7 @@ def decode_labels(payload: bytes) -> Labels:
     return labels
 
 
-def encode_full_labels(class_ids: np.ndarray) -> bytes:
+def encode_full_labels(class_ids):
     """Encodes a FULL_LABELS message. Called on the Python module.
 
     Args:
@@ -342,7 +342,7 @@ def encode_full_labels(class_ids: np.ndarray) -> bytes:
     return frame(MsgType.FULL_LABELS, payload)
 
 
-def decode_full_labels(payload: bytes) -> np.ndarray:
+def decode_full_labels(payload):
     """Decodes a FULL_LABELS message payload. Called on UE5.
 
     Args:

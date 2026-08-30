@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 
 # -----Main---------------------------------------------------------------------
-if __name__ == "__main__":
+def main():
     # Load point cloud
     parser = argparse.ArgumentParser(
         description="Interactive segmentation Python module.")
@@ -135,3 +135,7 @@ if __name__ == "__main__":
 
     conn.close()
     logger.info("Connection closed")
+
+
+if __name__ == "__main__":
+    main()

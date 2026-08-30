@@ -19,7 +19,7 @@ MAX_PAYLOAD = 1_000_000_000
 class Connection:
     """A single TCP connection used to send/receive framed protocol messages."""
 
-    def __init__(self, sock: socket.socket):
+    def __init__(self, sock):
         """Initializes the connection.
 
         Args:
@@ -33,7 +33,7 @@ class Connection:
     def __exit__(self, exc_type, exc, tb):
         self.sock.close()
 
-    def connect(self, host: str, port: int):
+    def connect(self, host, port):
         """Connects the underlying socket to a remote endpoint.
 
         Args:
@@ -46,7 +46,7 @@ class Connection:
         """Closes the underlying socket."""
         self.sock.close()
 
-    def _recv_exactly(self, nbytes: int) -> bytes:
+    def _recv_exactly(self, nbytes):
         """Reads exactly nbytes from the socket, blocking as needed.
 
         Args:
@@ -67,7 +67,7 @@ class Connection:
             msg.extend(chunk)  # extend() appends multiple bytes
         return bytes(msg)
 
-    def recv_message(self) -> tuple[int, bytes]:
+    def recv_message(self):
         """Reads one full framed message from the socket.
 
         Returns:
@@ -87,7 +87,7 @@ class Connection:
         payload = self._recv_exactly(payload_len)
         return msg_type, payload
 
-    def send_message(self, msg: bytes):
+    def send_message(self, msg):
         """Sends a full framed message.
 
         Args:
@@ -99,7 +99,7 @@ class Connection:
 class Listener:
     """A TCP listening socket that accepts a single client connection."""
 
-    def __init__(self, host: str, port: int):
+    def __init__(self, host, port):
         """Creates, binds, and starts listening on a TCP socket.
 
         Args:

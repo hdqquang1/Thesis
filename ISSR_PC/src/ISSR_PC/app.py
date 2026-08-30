@@ -12,6 +12,7 @@ import numpy as np
 import os
 import sys
 import open3d as o3d
+import zlib
 
 from server import Listener
 from protocol import (
@@ -62,13 +63,14 @@ def load_canonical(bin_path):
         ue_hash = int(np.frombuffer(f.read(4), np.uint32)[0])
         pts = np.frombuffer(f.read(12 * count), np.float32).reshape(-1, 3)
         gt = np.frombuffer(f.read(count), np.uint8)
-    assert len(pts) == count and len(gt) == count
+    hash = zlib.crc32(pts)
+    assert len(pts) == count and len(gt) == count and ue_hash == hash
     points = pts * np.float32([0.01, -0.01, 0.01])
     return points, gt.copy(), count, ue_hash
 
 
 # -----Main---------------------------------------------------------------------
-if __name__ == "__main__":
+def main():
     # Load point cloud
     parser = argparse.ArgumentParser(
         description="Interactive segmentation Python module.")
@@ -172,3 +174,7 @@ if __name__ == "__main__":
 
     listener.close()
     logger.info("Listener closed")
+
+
+if __name__ == "__main__":
+    main()
