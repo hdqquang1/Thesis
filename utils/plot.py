@@ -3,7 +3,7 @@
 import matplotlib.pyplot as plt
 
 
-def main() -> None:
+def main():
     # Data from doc/UE5.md, "Point budget and FPS" table.
     # Cloud: labelled_native_forest_2, development laptop, Ultra Performance scaling.
     visible_points_m = [p / 1_000_000 for p in

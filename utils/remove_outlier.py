@@ -22,7 +22,7 @@ def display_inlier_outlier(cloud, ind):
                                       up=[-0.0694, -0.9768, 0.2024])
 
 
-def main() -> None:
+def main():
     parser = argparse.ArgumentParser(
         description="Remove outliers in a point cloud"
     )

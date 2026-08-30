@@ -22,7 +22,7 @@ DEFAULT_COLOR = (255, 255, 255)  # White for unmapped labels
 
 
 # -----Functions----------------------------------------------------------------
-def read_pickle(path: str) -> tuple[np.ndarray, np.ndarray]:
+def read_pickle(path):
     """Reads points and labels from an Nx4 pickle file.
 
     Args:
@@ -38,7 +38,7 @@ def read_pickle(path: str) -> tuple[np.ndarray, np.ndarray]:
     return points, labels
 
 
-def read_txt(path: str) -> tuple[np.ndarray, np.ndarray]:
+def read_txt(path):
     """Reads points and labels from an Nx4 txt file.
 
     Args:
@@ -61,7 +61,7 @@ def read_txt(path: str) -> tuple[np.ndarray, np.ndarray]:
     return points, labels
 
 
-def read_laz(input_path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def read_laz(input_path):
     """Reads points, classification, and RGB colour from a LAZ file.
 
     Args:
@@ -81,7 +81,7 @@ def read_laz(input_path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.nd
     return points, classification, red, green, blue
 
 
-def labels_to_colors(labels: np.ndarray) -> np.ndarray:
+def labels_to_colors(labels):
     """Maps classification labels to RGB colours via COLOR_MAP.
 
     Args:
@@ -98,7 +98,7 @@ def labels_to_colors(labels: np.ndarray) -> np.ndarray:
     return colors
 
 
-def write_laz(points: np.ndarray, labels: np.ndarray, output_path: str) -> None:
+def write_laz(points, labels, output_path):
     """Writes points, classification labels, and RGB colour to a LAZ file.
 
     Args:
@@ -124,7 +124,7 @@ def write_laz(points: np.ndarray, labels: np.ndarray, output_path: str) -> None:
 
 
 # -----Main---------------------------------------------------------------------
-def main() -> None:
+def main():
     """Parses CLI arguments and converts the given pickle or .txt file to LAZ."""
     parser = argparse.ArgumentParser(
         description="Convert .p point cloud to LAZ.")

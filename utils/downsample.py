@@ -12,24 +12,8 @@ from convert_to_laz import (
 )
 
 
-# -----Functions----------------------------------------------------------------
-def get_density(points: np.ndarray) -> float:
-    """Calculates density of the point cloud
-
-    Args:
-        points: numpy array of points
-
-    Returns:
-        Density of point cloud in points/m³
-    """
-    bbox_min = points.min(axis=0)
-    bbox_max = points.max(axis=0)
-    volume = np.prod(bbox_max - bbox_min)
-    return len(points) / volume
-
-
 # -----Main---------------------------------------------------------------------
-def main() -> None:
+def main():
     parser = argparse.ArgumentParser(
         description="Downsample a LAZ point cloud, retaining exact classification"
     )
@@ -54,9 +38,9 @@ def main() -> None:
     output_classification = classification[representative_indices]
 
     print(
-        f"Input has size {len(points)}, density {get_density(points)} pts/m3")
+        f"Input has size {len(points)}")
     print(
-        f"Output has size {len(output_points)}, density {get_density(output_points)} pts/m3")
+        f"Output has size {len(output_points)}")
 
     write_laz(output_points, output_classification, output_path)
     print(f"Wrote {len(output_points)} points to {output_path}")
