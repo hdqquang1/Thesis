@@ -10,28 +10,28 @@
 DECLARE_LOG_CATEGORY_EXTERN(LogISSR, Log, All);
 
 // -----Constants---------------------------------------------------------------
-/** Magic prefix ("NYOO") that must lead every message header, used to detect a desynced stream. */
-constexpr uint32 MsgPrefix = 0x39594040; // NYOO
+constexpr uint32 MsgPrefix = 0x4F4F594E; // NYOO
 
-/** Wire message type, sent as the second field of every message header. Must match the Python side's MsgType. */
+/** Wire message type, the second field of every message header. Must match the Python side's MsgType. */
 enum class EMsg : uint8
 {
 	None,
-	MsgHello = 0x01,
-	MsgReady = 0x02,
-	MsgClick = 0x03,
-	MsgLabels = 0x04,
-	MsgFullLabels = 0x05
+	MsgSessionConfig = 0x01, // Py  -> UE5  uint8 num_crops, uint8 max_num_clicks
+	MsgCropRequest = 0x02,	 // UE5 -> Py   uint8 advance (1 next, 0 resend current)
+	MsgCropCloud = 0x03,	 // Py  -> UE5  header + float32 coord[N*3] + uint8 labels[N] (+ uint8 gt[N])
+	MsgClicks = 0x04,		 // UE5 -> Py   header + click[M]
+	MsgLabels = 0x05,		 // Py  -> UE5  header + uint8 labels[N]
+	MsgFinish = 0x06,		 // UE5 -> Py   empty
+	MsgFinished = 0x07		 // Py  -> UE5  uint8 ok
 };
 
-/** Point classification used by both the labelling protocol and the point store. Must match the Python side's CLASS_ID. */
+/** Point classification. Must match the Python side's CLASS_ID. */
 UENUM(BlueprintType)
 enum class EClassID : uint8
 {
 	Foliage = 0,
 	Stem = 1,
 	Ground = 2,
-	Undergrowth = 3,
 	Unlabelled = 31
 };
 
@@ -40,99 +40,86 @@ enum class EClassID : uint8
 /** Fixed-size header prefixed to every framed message on the wire. */
 struct FHeader
 {
-	/** Must equal MsgPrefix or the message is treated as a desync. */
 	uint32 Prefix = 0;
-	/** Type of the message that follows. */
 	EMsg   MsgType = EMsg::None;
-	/** Size, in bytes, of the payload that follows this header. */
 	uint32 PayloadSize = 0;
 };
-static_assert(sizeof(FHeader) == 9, "FHeader must match Python wire format");
+static_assert(sizeof(FHeader) == 9, "FHeader must match Python <IBI wire format");
 
-/** Handshake payload sent by UE5 to identify the loaded point cloud. */
-struct FHello
+struct FSessionConfig
 {
-	/** Number of points in the point cloud. */
-	uint32 PointCount = 0;
-	/** Checksum of the point cloud, used to verify both sides loaded the same data. */
-	uint32 Checksum = 0;
+	uint8 NumCrops = 0;
+	uint8 MaxNumClicks = 0;
 };
-static_assert(sizeof(FHello) == 8, "FHello must match Python <II wire format");
+static_assert(sizeof(FSessionConfig) == 2, "FSessionConfig must match Python <BB wire format");
 
-/** A single point click/selection sent from UE5 to request a label update. */
+struct FCloudHeader
+{
+	uint8  CropID = 0;
+	uint32 NumPoints = 0;
+	/** 1 if a ground-truth label array follows the predicted labels. */
+	uint8 bHasGroundTruth = 0;
+};
+static_assert(sizeof(FCloudHeader) == 6, "FCloudHeader must match Python <BIB wire format");
+
+struct FClicksHeader
+{
+	uint8  CropID = 0;
+	uint32 NumClicks = 0;
+};
+static_assert(sizeof(FClicksHeader) == 5, "FClicksHeader must match Python <BI wire format");
+
 struct FClick
 {
-	/** Index of the clicked point in the point cloud. */
+	/** Position of the point in the CROP_CLOUD arrays. */
 	uint32	 PointIndex = 0;
-	/** X coordinate of the click (currently unused, reserved). */
-	float	 X = 0.f;
-	/** Y coordinate of the click (currently unused, reserved). */
-	float	 Y = 0.f;
-	/** Z coordinate of the click (currently unused, reserved). */
-	float	 Z = 0.f;
-	/** Class to assign to the clicked point (and its neighbourhood). */
 	EClassID ClassID = EClassID::Unlabelled;
-	/** Non-zero for a positive click, zero for a negative click. */
-	uint8	 PositiveFlag = 0;
 };
-static_assert(sizeof(FClick) == 18, "FClick must match Python <IfffBB wire format");
+static_assert(sizeof(FClick) == 5, "FClick must match Python <IB wire format");
 
+struct FLabelsHeader
+{
+	uint8  CropID = 0;
+	uint32 NumPoints = 0;
+};
+static_assert(sizeof(FLabelsHeader) == 5, "FLabelsHeader must match Python <BI wire format");
 #pragma pack(pop)
 
-/** A sparse set of point index -> class id assignments returned by the Python module. */
-struct FLabels
+struct FCropCloud
 {
-	/** Indices of the labelled points. */
-	TArray<uint32>	 PointIndices;
-	/** Class assigned to each point, aligned by position with PointIndices. */
-	TArray<EClassID> ClassIDs;
+	uint8		  CropID = 0;
+	TArray<float> Coord;
+	TArray<uint8> Labels;
+	/** Empty if the plot has no ground truth. */
+	TArray<uint8> GroundTruth;
+};
+
+struct FCropLabels
+{
+	uint8		  CropID = 0;
+	TArray<uint8> Labels;
 };
 
 // -----Functions---------------------------------------------------------------
-/**
- * Parses a message header from the front of a buffer.
- *
- * @param InData Pointer to at least sizeof(FHeader) bytes to parse.
- * @return The parsed header, or unset if the prefix does not match MsgPrefix.
- */
-TOptional<FHeader>			ParseHeader(const uint8* InData);
+/** @return The parsed header, or unset if the prefix does not match MsgPrefix. InData must hold sizeof(FHeader) bytes. */
+TOptional<FHeader> ParseHeader(const uint8* InData);
 
-/**
- * Encodes a HELLO message, ready to send over the socket.
- *
- * @param InHello Handshake payload to encode.
- * @return Framed HELLO message bytes.
- */
-TArray<uint8>				EncodeHello(const FHello& InHello);
+/** @return The decoded config, or unset if the payload size is wrong. */
+TOptional<FSessionConfig> DecodeSessionConfig(const TArray<uint8>& InPayload);
 
-/**
- * Decodes a READY message payload.
- *
- * @param InPayload Raw READY payload bytes (without header).
- * @return The ready flag (0 or 1), or unset if the payload is malformed.
- */
-TOptional<uint8>			DecodeReady(const TArray<uint8>& InPayload);
+/** @param bInAdvance True for the next crop, false to resend the current one. */
+TArray<uint8> EncodeCropRequest(bool bInAdvance);
 
-/**
- * Decodes a FULL_LABELS message payload.
- *
- * @param InPayload Raw FULL_LABELS payload bytes (without header).
- * @return Class id for every point in the point cloud, in point order, or unset if the payload is malformed or contains an invalid class id.
- */
-TOptional<TArray<EClassID>> DecodeFullLabels(const TArray<uint8>& InPayload);
+/** @return The decoded cloud, or unset if the payload size does not match NumPoints or a label is not a known class id. */
+TOptional<FCropCloud> DecodeCropCloud(const TArray<uint8>& InPayload);
 
-/**
- * Encodes a CLICK message, ready to send over the socket.
- *
- * @param InClick Click event to encode.
- * @return Framed CLICK message bytes, or unset if InClick has an invalid class id or positive flag.
- */
-TOptional<TArray<uint8>>	EncodeClick(const FClick& InClick);
+/** @param InClicks One entry per clicked point of crop InCropID. */
+TArray<uint8> EncodeClicks(uint8 InCropID, const TArray<FClick>& InClicks);
 
-/**
- * Decodes a LABELS message payload.
- *
- * @param InPayload Raw LABELS payload bytes (without header).
- * @return The decoded point index/class id pairs, or unset if the payload is malformed or contains an invalid class id.
- */
-TOptional<FLabels>			DecodeLabels(const TArray<uint8>& InPayload);
+/** @return The decoded labels, or unset if the payload size does not match NumPoints or a label is not a known class id. */
+TOptional<FCropLabels> DecodeLabels(const TArray<uint8>& InPayload);
+
+TArray<uint8> EncodeFinish();
+
+/** @return Whether Python wrote the LAZ, or unset if the payload size is wrong. */
+TOptional<bool> DecodeFinished(const TArray<uint8>& InPayload);

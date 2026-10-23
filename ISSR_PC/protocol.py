@@ -1,43 +1,41 @@
 """Protocol library for TCP/IP to encode/decode messages.
 """
 
-
 # -----Imports------------------------------------------------------------------
 from dataclasses import dataclass
 from enum import IntEnum
 import struct
 import numpy as np
 
-
 # -----Constants----------------------------------------------------------------
-MSG_PREFIX = 0x39594040  # NYOO
+MSG_PREFIX = 0x4F4F594E  # NYOO
 
 
 class MsgType(IntEnum):
-    HELLO = 0x01
-    READY = 0x02
-    CLICK = 0x03
-    LABELS = 0x04
-    FULL_LABELS = 0x05
+    SESSION_CONFIG = 0x01  # Py  -> UE5  uint8 num_crops, uint8 max_num_clicks
+    CROP_REQUEST   = 0x02  # UE5 -> Py   uint8 advance (1 next, 0 resend current)
+    CROP_CLOUD     = 0x03  # Py  -> UE5  header + float32 coord[N*3] + uint8 labels[N] (+ uint8 gt[N])
+    CLICKS         = 0x04  # UE5 -> Py   header + click[M]
+    LABELS         = 0x05  # Py  -> UE5  header + uint8 labels[N]
+    FINISH         = 0x06  # UE5 -> Py   empty
+    FINISHED       = 0x07  # Py  -> UE5  uint8 ok
 
 
-MSG_HEADER_FORMAT = "<IBI"
-MSG_HELLO_FORMAT  = "<II"
-MSG_READY_FORMAT  = "<B"
-MSG_CLICK_FORMAT  = "<IfffBB"
+MSG_HEADER_FORMAT = "<IBI"  # prefix, msg_type, payload_size
+SESSION_CONFIG_FORMAT = "<BB"  # num_crops, max_num_clicks
+CROP_REQUEST_FORMAT = "<B"  # advance
+CLOUD_HEADER_FORMAT = "<BIB"  # crop_id, num_points, has_gt
+CLICKS_HEADER_FORMAT = "<BI"  # crop_id, num_clicks
+CLICK_FORMAT = "<IB"  # point_index, class_id
+LABELS_HEADER_FORMAT = "<BI"  # crop_id, num_points
+FINISHED_FORMAT = "<B"  # ok
 
-
-CLASS_ID = {
-    "FOLIAGE":      0,
-    "STEM":         1,
-    "GROUND":       2,
-    "UNDERGROWTH":  3,
-    "UNLABELLED":   31
-}
+CLASS_ID = {"FOLIAGE": 0, "STEM": 1, "GROUND": 2, "UNLABELLED": 31}
+MODEL_CLASSES = (0, 1, 2)  # Only classes a user may click and the model can output
 
 
 # -----Helper functions---------------------------------------------------------
-def frame(msg_type, payload):
+def frame(msg_type, payload=b""):
     """Puts payload into a full message frame.
 
     Args:
@@ -47,8 +45,7 @@ def frame(msg_type, payload):
     Returns:
         Full message (header + payload) in bytes.
     """
-    header = struct.pack(MSG_HEADER_FORMAT, MSG_PREFIX, msg_type,
-                         len(payload))
+    header = struct.pack(MSG_HEADER_FORMAT, MSG_PREFIX, msg_type, len(payload))
     return header + payload
 
 
@@ -62,10 +59,9 @@ def parse_header(header):
         Type of message and length of payload
 
     Raises:
-        ValueError: if prefix mismatches
+        ValueError: if prefix mismatches or the message type is unknown
     """
-    prefix, msg_type, payload_len = struct.unpack(MSG_HEADER_FORMAT,
-                                                  header)
+    prefix, msg_type, payload_len = struct.unpack(MSG_HEADER_FORMAT, header)
     if prefix != MSG_PREFIX:
         raise ValueError(f"Bad prefix: {prefix:#x}")
     return MsgType(msg_type), payload_len
@@ -73,283 +69,148 @@ def parse_header(header):
 
 # -----Classes------------------------------------------------------------------
 @dataclass
-class Hello:
-    """Handshake payload sent by UE5 to identify the point cloud.
+class Cloud:
+    """One crop streamed to UE5.
 
     Attributes:
-        count: Number of points in the point cloud.
-        checksum: Checksum of the point cloud, used to verify both sides
-            loaded the same data.
+        crop_id: Index of the crop in the plot.
+        coord: (num_points, 3) float32, crop-local metres, UE frame (Y flipped).
+        labels: (num_points,) uint8 current prediction.
+        gt: (num_points,) uint8 ground truth, or None if the plot has none.
     """
-    count: int
-    checksum: int
 
-    def is_valid(self):
-        """Validates field values.
-
-        Raises:
-            ValueError: If count is negative.
-        """
-        if self.count < 0:
-            raise ValueError(f"invalid point count: {self.count}")
+    crop_id: int
+    coord: np.ndarray
+    labels: np.ndarray
+    gt: np.ndarray = None
 
 
 @dataclass
-class Ready:
-    """Handshake response sent by the Python module.
+class Clicks:
+    """A batch of user clicks on one crop.
 
     Attributes:
-        ok: 1 if the handshake succeeded, 0 otherwise. Kept as an int
-            (rather than bool) to avoid other garbage values being
-            treated as true.
+        crop_id: Crop the clicked points belong to.
+        point_indices: (num_clicks,) uint32 indices into the crop's points.
+        class_ids: (num_clicks,) uint8 class assigned to each clicked point.
     """
-    ok: int  # int to avoid other garbage values treated as true
 
-    def is_valid(self):
-        """Validates field values.
+    crop_id: int
+    point_indices: np.ndarray
+    class_ids: np.ndarray
+
+    def is_valid(self, num_points):
+        """Validates the clicks against the resident crop.
 
         Raises:
-            ValueError: If ok is not 0 or 1.
+            ValueError: If the batch is empty, a point index is out of range,
+                or a class is not one the model predicts.
         """
-        if self.ok not in (0, 1):
-            raise ValueError(f"invalid ok flag: {self.ok}")
-
-
-@dataclass
-class Click:
-    """A single point click/selection sent from UE5.
-
-    Attributes:
-        point_index: Index of the clicked point in the point cloud.
-        x: X coordinate of the click (currently unused, reserved).
-        y: Y coordinate of the click (currently unused, reserved).
-        z: Z coordinate of the click (currently unused, reserved).
-        class_id: Class to assign, one of CLASS_ID values.
-        positive_flag: 1 for a positive click, 0 for a negative click.
-    """
-    point_index: int
-    x: float
-    y: float
-    z: float
-    class_id: int
-    positive_flag: int
-
-    def is_valid(self):
-        """Validates field values.
-
-        Raises:
-            ValueError: If class_id is not a known class, or
-                positive_flag is not 0 or 1.
-        """
-        if self.class_id not in CLASS_ID.values():
-            raise ValueError(f"invalid class_id: {self.class_id}")
-        if self.positive_flag not in (0, 1):
-            raise ValueError(f"invalid positive_flag: {self.positive_flag}")
-
-
-@dataclass
-class Labels:
-    """A sparse set of point index to class_id assignments.
-
-    Attributes:
-        point_indices: Indices of the labelled points.
-        class_ids: Class assigned to each point, aligned by position
-            with point_indices.
-    """
-    point_indices: list
-    class_ids: list
-
-    def is_valid(self):
-        """Validates field values.
-
-        Raises:
-            ValueError: If point_indices and class_ids have different
-                lengths, or if any class_id is not a known class.
-        """
-        if len(self.point_indices) != len(self.class_ids):
+        if len(self.point_indices) == 0:
+            raise ValueError("empty click batch")
+        if self.point_indices.max() >= num_points:
             raise ValueError(
-                f"mismatch length: {len(self.point_indices)} != {len(self.class_ids)}")
-        if any(cid not in CLASS_ID.values() for cid in self.class_ids):
-            raise ValueError("invalid class_id in labels")
+                f"point index {self.point_indices.max()} out of range ({num_points})"
+            )
+        if not np.isin(self.class_ids, MODEL_CLASSES).all():
+            raise ValueError(f"invalid class_id in clicks: {np.unique(self.class_ids)}")
 
 
 # -----Functions----------------------------------------------------------------
-def encode_hello(hello):
-    """Encodes a HELLO message. Called on UE5.
-
-    Args:
-        hello: Handshake payload to encode.
-
-    Returns:
-        Framed HELLO message in bytes.
-
-    Raises:
-        ValueError: If hello fails validation.
-    """
-    hello.is_valid()
-    payload = struct.pack(MSG_HELLO_FORMAT, hello.count, hello.checksum)
-    return frame(MsgType.HELLO, payload)
+def encode_session_config(num_crops, max_num_clicks):
+    payload = struct.pack(SESSION_CONFIG_FORMAT, num_crops, max_num_clicks)
+    return frame(MsgType.SESSION_CONFIG, payload)
 
 
-def decode_hello(payload):
-    """Decodes a HELLO message payload. Called on the Python module.
-
-    Args:
-        payload: Raw HELLO payload bytes (without header).
-
-    Returns:
-        Decoded Hello.
-
-    Raises:
-        ValueError: If the decoded fields fail validation.
-        struct.error: If payload does not match MSG_HELLO_FORMAT.
-    """
-    hello = Hello(*struct.unpack(MSG_HELLO_FORMAT, payload))
-    hello.is_valid()
-    return hello
+def decode_session_config(payload):
+    return struct.unpack(SESSION_CONFIG_FORMAT, payload)
 
 
-def encode_ready(ready):
-    """Encodes a READY message. Called on the Python module.
-
-    Args:
-        ready: Handshake response to encode.
-
-    Returns:
-        Framed READY message in bytes.
-
-    Raises:
-        ValueError: If ready fails validation.
-    """
-    ready.is_valid()
-    payload = struct.pack(MSG_READY_FORMAT, ready.ok)
-    return frame(MsgType.READY, payload)
+def encode_crop_request(advance):
+    return frame(MsgType.CROP_REQUEST, struct.pack(CROP_REQUEST_FORMAT, advance))
 
 
-def decode_ready(payload):
-    """Decodes a READY message payload. Called on UE5.
-
-    Args:
-        payload: Raw READY payload bytes (without header).
-
-    Returns:
-        Decoded Ready.
-
-    Raises:
-        ValueError: If the decoded fields fail validation.
-        struct.error: If payload does not match MSG_READY_FORMAT.
-    """
-    ready = Ready(struct.unpack(MSG_READY_FORMAT, payload)[0])
-    ready.is_valid()
-    return ready
+def decode_crop_request(payload):
+    advance = struct.unpack(CROP_REQUEST_FORMAT, payload)[0]
+    if advance not in (0, 1):
+        raise ValueError(f"invalid advance flag: {advance}")
+    return bool(advance)
 
 
-def encode_click(click):
-    """Encodes a CLICK message. Called on UE5.
-
-    Args:
-        click: Click event to encode.
-
-    Returns:
-        Framed CLICK message in bytes.
-
-    Raises:
-        ValueError: If click fails validation.
-    """
-    click.is_valid()
-    payload = struct.pack(MSG_CLICK_FORMAT, click.point_index, click.x, click.y,
-                          click.z, click.class_id, click.positive_flag)
-    return frame(MsgType.CLICK, payload)
-
-
-def decode_click(payload):
-    """Decodes a CLICK message payload. Called on the Python module.
-
-    Args:
-        payload: Raw CLICK payload bytes (without header).
-
-    Returns:
-        Decoded Click.
-
-    Raises:
-        ValueError: If the decoded fields fail validation.
-        struct.error: If payload does not match MSG_CLICK_FORMAT.
-    """
-    click = Click(*struct.unpack(MSG_CLICK_FORMAT, payload))
-    click.is_valid()
-    return click
+def encode_crop_cloud(cloud):
+    coord = np.ascontiguousarray(cloud.coord, dtype="<f4")
+    labels = np.ascontiguousarray(cloud.labels, dtype="u1")
+    num_points = len(labels)
+    if coord.shape != (num_points, 3):
+        raise ValueError(f"coord shape {coord.shape} does not match {num_points} labels")
+    has_gt = cloud.gt is not None
+    header = struct.pack(CLOUD_HEADER_FORMAT, cloud.crop_id, num_points, has_gt)
+    parts = [header, coord.tobytes(), labels.tobytes()]
+    if has_gt:
+        gt = np.ascontiguousarray(cloud.gt, dtype="u1")
+        if gt.shape != (num_points,):
+            raise ValueError(f"gt shape {gt.shape} does not match {num_points} labels")
+        parts.append(gt.tobytes())
+    return frame(MsgType.CROP_CLOUD, b"".join(parts))
 
 
-def encode_labels(labels):
-    """Encodes a LABELS message. Called on the Python module.
+def decode_crop_cloud(payload):
+    header_size = struct.calcsize(CLOUD_HEADER_FORMAT)
+    crop_id, num_points, has_gt = struct.unpack_from(CLOUD_HEADER_FORMAT, payload)
+    bytes_per_point = 12 + 1 + (1 if has_gt else 0)
+    expected = header_size + num_points * bytes_per_point
+    if len(payload) != expected:
+        raise ValueError(f"cloud payload {len(payload)} B, expected {expected}")
+    offset = header_size
+    coord = np.frombuffer(payload, "<f4", num_points * 3, offset).reshape(-1, 3)
+    offset += num_points * 12
+    labels = np.frombuffer(payload, "u1", num_points, offset)
+    offset += num_points
+    gt = np.frombuffer(payload, "u1", num_points, offset) if has_gt else None
+    return Cloud(crop_id, coord, labels, gt)
 
-    Args:
-        labels: Sparse point index/class_id assignments to encode.
 
-    Returns:
-        Framed LABELS message in bytes.
+def encode_clicks(batch):
+    clicks = b"".join(
+        struct.pack(CLICK_FORMAT, i, c) for i, c in zip(batch.point_indices, batch.class_ids)
+    )
+    header = struct.pack(CLICKS_HEADER_FORMAT, batch.crop_id, len(batch.point_indices))
+    return frame(MsgType.CLICKS, header + clicks)
 
-    Raises:
-        ValueError: If labels fails validation.
-    """
-    labels.is_valid()
-    count = len(labels.point_indices)
-    flat = [v for pair in zip(labels.point_indices,
-                              labels.class_ids) for v in pair]
-    payload = struct.pack("<I"+"IB"*count, count, *flat)
-    return frame(MsgType.LABELS, payload)
+
+def decode_clicks(payload):
+    header_size = struct.calcsize(CLICKS_HEADER_FORMAT)
+    crop_id, num_clicks = struct.unpack_from(CLICKS_HEADER_FORMAT, payload)
+    if len(payload) != header_size + num_clicks * struct.calcsize(CLICK_FORMAT):
+        raise ValueError(f"clicks payload {len(payload)} B does not match {num_clicks} clicks")
+    clicks = list(struct.iter_unpack(CLICK_FORMAT, payload[header_size:]))
+    point_indices = np.array([c[0] for c in clicks], dtype="<u4")
+    class_ids = np.array([c[1] for c in clicks], dtype="u1")
+    return Clicks(crop_id, point_indices, class_ids)
+
+
+def encode_labels(crop_id, labels):
+    labels = np.ascontiguousarray(labels, dtype="u1")
+    header = struct.pack(LABELS_HEADER_FORMAT, crop_id, len(labels))
+    return frame(MsgType.LABELS, header + labels.tobytes())
 
 
 def decode_labels(payload):
-    """Decodes a LABELS message payload. Called on UE5.
-
-    Args:
-        payload: Raw LABELS payload bytes (without header).
-
-    Returns:
-        Decoded Labels.
-
-    Raises:
-        ValueError: If the decoded fields fail validation.
-        struct.error: If payload is malformed for the declared count.
-    """
-    count = struct.unpack_from("<I", payload)[0]
-    rest = struct.unpack_from("<" + "IB"*count, payload, offset=4)
-    point_indices = list(rest[0::2])
-    class_ids = list(rest[1::2])
-    labels = Labels(point_indices, class_ids)
-    labels.is_valid()
-    return labels
+    header_size = struct.calcsize(LABELS_HEADER_FORMAT)
+    crop_id, num_points = struct.unpack_from(LABELS_HEADER_FORMAT, payload)
+    if len(payload) != header_size + num_points:
+        raise ValueError(f"labels payload {len(payload)} B does not match {num_points} points")
+    labels = np.frombuffer(payload, "u1", num_points, header_size)
+    return crop_id, labels
 
 
-def encode_full_labels(class_ids):
-    """Encodes a FULL_LABELS message. Called on the Python module.
-
-    Args:
-        class_ids: Class id for every point in the point cloud, in
-            point order.
-
-    Returns:
-        Framed FULL_LABELS message in bytes.
-
-    Raises:
-        ValueError: If any class_id is not a known class.
-    """
-    arr = np.asarray(class_ids, dtype=np.uint8)
-    if not np.isin(arr, list(CLASS_ID.values())).all():
-        raise ValueError("invalid class_id in full labels")
-    payload = struct.pack("<I", len(arr)) + arr.tobytes()
-    return frame(MsgType.FULL_LABELS, payload)
+def encode_finish():
+    return frame(MsgType.FINISH)
 
 
-def decode_full_labels(payload):
-    """Decodes a FULL_LABELS message payload. Called on UE5.
+def encode_finished(ok):
+    return frame(MsgType.FINISHED, struct.pack(FINISHED_FORMAT, int(ok)))
 
-    Args:
-        payload: Raw FULL_LABELS payload bytes (without header).
 
-    Returns:
-        Array of class ids for every point, in point order.
-    """
-    count = struct.unpack_from("<I", payload)[0]
-    return np.frombuffer(payload, dtype=np.uint8, count=count, offset=4).copy()
+def decode_finished(payload):
+    return bool(struct.unpack(FINISHED_FORMAT, payload)[0])
