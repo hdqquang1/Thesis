@@ -1,6 +1,4 @@
-"""Converts a pickle labelled point cloud to LAZ
-"""
-
+"""Converts labelled point cloud to LAZ."""
 
 # -----Imports------------------------------------------------------------------
 import sys
@@ -10,15 +8,15 @@ import argparse
 import numpy as np
 import laspy
 
-
 # -----Constant-----------------------------------------------------------------
 COLOR_MAP = {
-    0: (0, 255, 0),      # Green  - Foliage
-    1: (255, 0, 0),      # Red    - Stem
-    2: (0, 0, 255),      # Blue   - Ground
-    3: (0, 255, 255),    # Cyan   - Undergrowth
+    0: (0, 255, 0),  # Green  - Foliage
+    1: (255, 0, 0),  # Red    - Stem
+    2: (0, 0, 255),  # Blue   - Ground
+    3: (0, 255, 255),  # Cyan   - Undergrowth
 }
-DEFAULT_COLOR = (255, 255, 255)  # White for unmapped labels
+# White for unmapped labels
+DEFAULT_COLOR = (255, 255, 255)
 
 
 # -----Functions----------------------------------------------------------------
@@ -82,17 +80,17 @@ def read_laz(input_path):
 
 
 def labels_to_colors(labels):
-    """Maps classification labels to RGB colours via COLOR_MAP.
+    """Maps classification labels to RGB colors via COLOR_MAP.
 
     Args:
         labels: (N,) array of classification labels.
 
     Returns:
-        An (N, 3) uint16 array of RGB colours, scaled to the
+        An (N, 3) uint16 array of RGB colors, scaled to the
         16-bit range LAS RGB fields use. Labels not present in
-        COLOR_MAP are left black.
+        COLOR_MAP are left white.
     """
-    colors = np.zeros((len(labels), 3), dtype=np.uint16)
+    colors = np.ones((len(labels), 3), dtype=np.uint16) * 255
     for label, (r, g, b) in COLOR_MAP.items():
         colors[labels == label] = (r * 257, g * 257, b * 257)
     return colors
@@ -106,8 +104,7 @@ def write_laz(points, labels, output_path):
         labels: (N,) array of classification labels.
         output_path: Path to write the .laz file to.
     """
-    # format 2: 8-bit classification + RGB, no GPS time
-    header = laspy.LasHeader(point_format=7)
+    header = laspy.LasHeader(point_format=2)
     las = laspy.LasData(header)
     las.x = points[:, 0]
     las.y = points[:, 1]
@@ -125,24 +122,28 @@ def write_laz(points, labels, output_path):
 
 # -----Main---------------------------------------------------------------------
 def main():
-    """Parses CLI arguments and converts the given pickle or .txt file to LAZ."""
-    parser = argparse.ArgumentParser(
-        description="Convert .p point cloud to LAZ.")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input_path", help="Path to input pickle or .txt (Nx4) file")
     parser.add_argument(
-        "input_path", help="Path to input pickle or .txt (Nx4) file")
+        "-o", "--output", help="Output .laz path (default: same name, .laz)"
+    )
     parser.add_argument(
-        "-o", "--output", help="Output .laz path (default: same name, .laz)")
+        "--comb", action="store_true", help="Combine ground and undergrowth labels"
+    )
     args = parser.parse_args()
 
-    input_path = args.input_path
-    ext = os.path.splitext(args.input_path)[1].lower()
+    input_path = os.path.normpath(args.input_path)
+    ext = os.path.splitext(input_path)[1].lower()
     if ext == ".p":
         points, labels = read_pickle(input_path)
     elif ext == ".txt":
         points, labels = read_txt(input_path)
     else:
-        print(f"Error: unsupported input '{ext}'. Use .p or .ply.")
+        print(f"Error: unsupported input '{ext}'. Use .p or .txt.")
         sys.exit(1)
+
+    if args.comb:
+        labels[labels == 3] = 2
 
     output_path = args.output or os.path.splitext(input_path)[0] + ".laz"
     write_laz(points, labels, output_path)
